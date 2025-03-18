@@ -176,26 +176,51 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Current Time</title>
+      <title>Market Scanner</title>
       <style>
         body {
           margin: 0;
           height: 100vh;
           display: flex;
+          flex-direction: column;
           justify-content: center;
           align-items: center;
           font-family: Arial, sans-serif;
           background-color: #f0f0f0;
+          gap: 2rem;
         }
         #time {
           font-size: 4rem;
           font-weight: bold;
           color: #333;
         }
+        #symbol-container {
+          text-align: center;
+        }
+        #symbol-label {
+          font-size: 1.5rem;
+          color: #666;
+          margin-bottom: 0.5rem;
+        }
+        #best-symbol {
+          font-size: 2.5rem;
+          font-weight: bold;
+          color: #2196F3;
+        }
+        #moves {
+          font-size: 1.2rem;
+          color: #666;
+          margin-top: 0.5rem;
+        }
       </style>
     </head>
     <body>
       <div id="time"></div>
+      <div id="symbol-container">
+        <div id="symbol-label">Best Performing Symbol</div>
+        <div id="best-symbol">-</div>
+        <div id="moves">-</div>
+      </div>
       <script>
         function updateTime() {
           const now = new Date();
@@ -209,13 +234,36 @@ app.get('/', (req, res) => {
         }
         updateTime();
         setInterval(updateTime, 1000);
+
+        // WebSocket connection
+        const ws = new WebSocket('ws://' + window.location.host);
+        
+        ws.onmessage = function(event) {
+          const data = JSON.parse(event.data);
+          if (data.symbol) {
+            document.getElementById('best-symbol').textContent = data.symbol;
+            document.getElementById('moves').textContent = `${data.moves} moves`;
+          }
+        };
+
+        ws.onerror = function(error) {
+          console.error('WebSocket error:', error);
+        };
+
+        ws.onclose = function() {
+          console.log('WebSocket connection closed');
+          setTimeout(() => {
+            window.location.reload();
+          }, 5000);
+        };
       </script>
     </body>
     </html>
   `);
+  `);
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
