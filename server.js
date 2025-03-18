@@ -3,6 +3,14 @@ const EventEmitter = require('events');
 const fetch = require('node-fetch');
 const app = express();
 
+let lastUpdate = {
+    symbol: null,
+    moves: 0,
+    timestamp: null
+};
+
+app.use(express.json());
+
 class SymbolScanner extends EventEmitter {
     constructor() {
         super();
@@ -166,8 +174,23 @@ class SymbolScanner extends EventEmitter {
 const scanner = new SymbolScanner();
 scanner.on('bestPerformerFound', (data) => {
     console.log('[Scanner] Internal event listener caught bestPerformerFound:', data.symbol);
+    lastUpdate = {
+        symbol: data.symbol,
+        moves: data.moves,
+        timestamp: Date.now()
+    };
 });
 scanner.start();
+
+app.get('/api/updates', (req, res) => {
+    const lastUpdateTime = parseInt(req.query.lastUpdate) || 0;
+    
+    if (lastUpdate.timestamp && lastUpdate.timestamp > lastUpdateTime) {
+        res.json(lastUpdate);
+    } else {
+        res.status(304).send();
+    }
+});
 
 app.get('/', (req, res) => {
   res.send(`
@@ -235,27 +258,31 @@ app.get('/', (req, res) => {
         updateTime();
         setInterval(updateTime, 1000);
 
-        // WebSocket connection
-        const ws = new WebSocket('ws://' + window.location.host);
+        // Long polling for updates
+        let lastUpdateTime = 0;
         
-        ws.onmessage = function(event) {
-          const data = JSON.parse(event.data);
-          if (data.symbol) {
-            document.getElementById('best-symbol').textContent = data.symbol;
-            document.getElementById('moves').textContent = `${data.moves} moves`;
-          }
-        };
-
-        ws.onerror = function(error) {
-          console.error('WebSocket error:', error);
-        };
-
-        ws.onclose = function() {
-          console.log('WebSocket connection closed');
-          setTimeout(() => {
-            window.location.reload();
-          }, 5000);
-        };
+        function pollForUpdates() {
+            fetch('/api/updates?lastUpdate=' + lastUpdateTime)
+                .then(response => {
+                    if (response.status === 304) {
+                        return null;
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data) {
+                        document.getElementById('best-symbol').textContent = data.symbol;
+                        document.getElementById('moves').textContent = `${data.moves} moves`;
+                        lastUpdateTime = data.timestamp;
+                    }
+                })
+                .catch(error => console.error('Polling error:', error))
+                .finally(() => {
+                    setTimeout(pollForUpdates, 1000);
+                });
+        }
+        
+        pollForUpdates();
       </script>
     </body>
     </html>
@@ -264,6 +291,6 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
